@@ -19,8 +19,7 @@ void steer()
           EEPROM.write(NCaddress, NextCoor);
         }
   
-  //after 3 minutes 
-  delay(courseTime*60*1000);//////////////////////////////////////we need this delay
+  delay (1*60*1000) //right now it's 1 minute, but could be 3, 5, whatever
   
   //refresh navigation information
   gps.f_get_position(&flat, &flon, 0);
@@ -78,7 +77,6 @@ if (abs(BearingDiff)>20)
 else
  {
  rudder(0); //you're doing good boat!!
- delay (1*60*1000)
  }
  
 logData(lat2, lon2); //record progress on SD card
