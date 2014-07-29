@@ -1,0 +1,238 @@
+//PowerTrain_SM_Skeleton
+//July 24 2014
+//Represents State Machines for the Sea Rover's PT Software
+//Run on an Arduino Mega
+ 
+
+
+
+
+#include <SM.h> //This is the State Machine Library
+#include <SoftwareSerial.h> //This is the Serial Library
+#include <PWMServo.h>  //this is the UPDATED servo library for use on the Mega
+#include <EEPROM.h> //This is the EEPROM library for storing the last location
+
+SM PT(PT_HEAD);//create statemachine with first state "NavHEAD"
+
+
+int led = 13; //Relay pin that controls LED
+int motorTime = 0; //timer for motor
+int ampControlPin = 12; //ESC control pin (treated as servo)
+
+//reference booleans
+boolean batteryLow = 0; //will disable rudder usage
+boolean batteryCharging = 0;
+boolean batteryFull = 0;
+
+//globals
+//globals can also be accessed and utilized by the Navigation States
+float feedMotorCurrent = 0; //how much current to give ESC
+float batteryVoltage = 0; //voltage across battery terminals (~12)
+float solarVoltage = 0; //voltage coming from panels (~18)
+float solarCurrent = 0; //current from panels
+float batteryCurrent = 0; //current going from battey charger to battery (NOT from bat -> esc)
+int lastMPPT = 0; //last time MPPT was used, time to 30 minute intervals
+
+
+int NCaddress = 69; //"Next Coordinate Address" -> EEPROM address of last known position
+
+int NextCoor = 0; //place in the arrays, tells target coordinate, recorded both in EEPROM and RAM
+//REMEMBER TO RESET EEPROM TO ZERO BEFORE FINAL VOYAGE, THIS IS EXTREMELY IMPORTANT******************
+
+ PWMServo esc; //create PWMServo object for the current controller (treated as servo)
+
+
+void setup(){
+  
+  Serial.begin(9600); //output on computer
+ pinMode(led,OUTPUT); //relay assignment
+  esc.attach(ampControlPin); //esc assignment
+
+  NextCoor = EEPROM.read(NCaddress); //find out where the boat was last --->> RESET BEFORE LAUNCH
+  
+  Serial.println("ESC Calibrating.....");
+  
+  //ESC calibration sequence
+  //also located in navigation setup()
+   esc.write(0); 
+  delay(100);
+  esc.write(179);
+  delay(100);
+  esc.write(90);
+  
+  delay(1500); //delay to let ESC software setup 
+ }
+ 
+ void(* resetFunc) (void) = 0; //this is the "reset" function to avoid millis() overflow. may not be utilized.
+
+
+void loop(){
+  EXEC(PT);//run statemachine "PT".
+}
+
+//PT_HEAD is just to demonstrate that all systems work, nothing critical is accomplished here
+State PT_HEAD(){
+  Serial.println("running PT_HEAD function");
+  TripleBlink();
+  Serial.println("blink LEDS, run startup scripts, etc.");
+  
+  //update all values
+   readBatteryVoltage();
+   readSolarCurrent();
+   readSolarVoltage();
+
+  Serial.println("Transitioning into STATE 1");
+  delay(500);
+ PT.Set(PT1);
+  
+}
+
+//PT1 determines state of charging and battery level
+//PT1 acts as an controller for the various states that can exist.
+//PT1 should be revisited every 15 minutes or so to determine correct state
+State PT1(){
+ 
+  //determine state of battery
+ if (batteryVoltage < 12.4) //arbitrary
+  {batteryLow = 1;
+   batteryFull = 0;}
+  else
+  {batteryLow = 0;}
+  
+  if(batteryVoltage > 14.4)
+   {batteryFull = 1;}
+  
+  //determine if battery charging
+  if (batteryCurrent > 2)
+  {batteryCharging = 1;
+   OpenRelays();} //have all power to motors come from solar panels
+  else
+  {batteryCharging = 0;}
+  
+  //highest priority Stage
+  if(batteryLow)
+  {PT.Set(BatLow);}
+  
+  //most common stage
+  if(batteryCharging)
+  {PT.Set(MPPT);}
+  
+  //opens relays, minimizes usage
+  if(readSolarCurrent() < 0.5) //0.5 is arbitrary
+  {PT.Set(NightMode);}
+  
+  //lowest priority, sends all solar current to motor
+  if(batteryFull)
+  {PT.Set(MPPT);}
+  
+ 
+  
+  }
+
+
+
+
+
+State BatLow() {
+  //set throttle to zero
+  //open relays to stop any battery drainage
+  //delay until solar panels have current
+  
+  OpenRelays();
+  
+  
+     readBatteryVoltage();
+  if (batteryVoltage < 12.4) //arbitrary
+    {batteryLow = 1;
+     PT.Set(BatLow);}
+     
+     delay(2000);
+  
+}
+
+State MPPT() {
+  //optimize motor draw 
+  //use counter so that this is called every 30 minutes or so
+  
+  //add in JZ's optimization algorithms 
+}
+
+State NightMode(){
+  //turns on NavLight (could use GPS timestamps as well)
+  //Closes relay so that boat uses battery power
+  
+  CloseRelays();
+  
+}
+  
+
+  float readBatteryVoltage()
+  {
+    //read battery voltage data, return float of bat voltage and update batteryVoltage
+  }
+  
+  float readSolarCurrent()
+  {
+    //read current data, return float of solar current and update solarCurrent
+  }
+  
+  float readSolarVoltage()
+  {
+    //read solar voltage, return float of solar voltage and update solarVoltage
+  }
+  
+  
+  //will likely be controlled completely by the Power Train state machines
+  void motorOn()
+  {}
+  
+  //opens relays (so charge can't come from batteries to motor
+  void OpenRelays(){}
+  
+  //close relays so that battery doesn't fry and to allow motor to run off battery
+  void CloseRelays(){}
+  
+  
+  
+
+
+  
+  //single blink, spaced apart
+  //represents "searching for GPS"
+  void Blink()
+  { digitalWrite(led,HIGH);
+    delay(500);
+    digitalWrite(led,LOW);
+    delay(500);
+  }
+  
+  //quick double blink
+  //represents "GPS is locked"
+  void DoubleBlink()
+  { digitalWrite(led,HIGH);
+    delay(100);
+    digitalWrite(led,LOW);
+    delay(100);
+    digitalWrite(led,HIGH);
+    delay(100);
+    digitalWrite(led,LOW);
+    delay(100);
+  }
+  
+  //quick triple blink
+  //represents "powertrain is thinking"
+  void TripleBlink()
+  {digitalWrite(led,HIGH);
+    delay(100);
+    digitalWrite(led,LOW);
+    delay(100);
+    digitalWrite(led,HIGH);
+    delay(100);
+    digitalWrite(led,LOW);
+    delay(100);
+    digitalWrite(led,HIGH);
+    delay(100);
+    digitalWrite(led,LOW);
+    delay(100);
+  }
+  
