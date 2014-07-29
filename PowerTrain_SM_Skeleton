@@ -115,15 +115,16 @@ State PT1(){
   
   //most common stage
   if(batteryCharging)
-  {PT.Set(MPPT);}
+  {PT.Set(MPPT1);}
   
   //opens relays, minimizes usage
-  if(readSolarCurrent() < 0.5) //0.5 is arbitrary
+  
+  if(readSolarVoltage() < 14) //14 is arbitrary /////////current isn't a good indicator of panel output when the motor is off and not drawing current
   {PT.Set(NightMode);}
   
   //lowest priority, sends all solar current to motor
   if(batteryFull)
-  {PT.Set(MPPT);}
+  {PT.Set(MPPT2);}
   
  
   
@@ -150,11 +151,17 @@ State BatLow() {
   
 }
 
-State MPPT() {
+State MPPT1 {
   //optimize motor draw 
+  /////////////////////we need to maximize motor draw while not interfering with battery charging
   //use counter so that this is called every 30 minutes or so
   
   //add in JZ's optimization algorithms 
+}
+
+State MPPT2 {
+ /////////////////////optimize motor draw without worrying about taking power away from charging battery
+ 
 }
 
 State NightMode(){
