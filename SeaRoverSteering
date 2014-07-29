@@ -72,6 +72,21 @@ if (abs(BearingDiff)>20)
     CoorBearing = (int)gps.course_to(lat2, lon2, latTarget, longTarget);
     BearingDiff = CurrentHeading - CoorBearing;
    }
+   
+   /*
+   /////////////////////////////A more concise replacement for the two while loops above:
+   
+   while(BearingDiff < -5 || BearingDiff > 5)
+   {
+    rudder(0.45*BearingDiff);
+    gps.f_get_position(&lat1, &lon1, 0);
+    delay(5000);
+    gps.f_get_position(&lat2, &lon2, 0);
+    CurrentHeading = gps.course_to(lat1, lon1, lat2, lon2);
+    CoorBearing = (int)gps.course_to(lat2, lon2, latTarget, longTarget);
+    BearingDiff = CurrentHeading - CoorBearing;
+    }
+   */
 }
    
 else///////////////////////////////////////else shouldn't be here, because we need to straighten the rudder after we execute the code in the if block
