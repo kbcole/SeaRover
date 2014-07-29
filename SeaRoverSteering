@@ -74,7 +74,7 @@ if (abs(BearingDiff)>20)
    }
 }
    
-else
+else///////////////////////////////////////else shouldn't be here, because we need to straighten the rudder after we execute the code in the if block
  {
  rudder(0); //you're doing good boat!!
  }
