@@ -1,0 +1,87 @@
+//edits to steer method in Boat Code 2 by Tlig
+
+void steer()
+{    
+  float lat1, lat2, lon1, lon2, flat, flon, boatBearing;
+   unsigned long start = millis();
+  
+  //retrieve coordinates
+  gps.f_get_position(&flat, &flon, 0);
+ 
+   
+  lat1 = flat;
+  lon1 = flon;//////////////////////////////////lon2 was a typo
+  
+  
+  //if "within range" of the target location, increment NextCoor, and write to EEPROM for failsafe
+  if(WithinRange(lat1, lon1))
+        { NextCoor++;        
+          EEPROM.write(NCaddress, NextCoor);
+        }
+  
+  //after 3 minutes 
+  delay(courseTime*60*1000);//////////////////////////////////////we need this delay
+  
+  //refresh navigation information
+  gps.f_get_position(&flat, &flon, 0);
+   
+  lat2 = flat;
+  lon2 = flon;
+
+  //positive degrees are left for rudder
+  //negative degrees are right for rudder
+  //0degrees = NORTH (remember, we're using bearings)
+
+  //determine the direction the boat currently faces
+  int CurrentHeading = gps.course_to(lat1, lon1, lat2, lon2);
+ 
+  float latTarget = LatPath[NextCoor];
+  float longTarget = LongPath[NextCoor];
+
+  //determine the direction the boat SHOULD be going
+  int CoorBearing = (int)gps.course_to(lat2, lon2, latTarget, longTarget);
+
+  //calculates amount to correct by
+  int BearingDiff = CurrentHeading - CoorBearing;
+
+
+  // we leave the rudder in the position for the next autopilot() call
+if (abs(BearingDiff)>20)
+{
+ while (  -5 > BearingDiff)
+   {
+    rudder(0.45*BearingDiff);
+    gps.f_get_position(&lat1, &lon1, 0);////////////////////////////////////////////
+    delay(5000);
+    gps.f_get_position(&lat2, &lon2, 0);////////////////////////////////////////////
+    CurrentHeading = gps.course_to(lat1, lon1, lat2, lon2);
+    latTarget = LatPath[NextCoor]; //////////////////////////////////not necessary, latTarget was already set above
+    longTarget = LongPath[NextCoor];//////////////////////////////////not necessary, longTarget was already set above
+    CoorBearing = (int)gps.course_to(lat2, lon2, latTarget, longTarget);
+    BearingDiff = CurrentHeading - CoorBearing;
+   }
+
+ while ( 5 < BearingDiff)
+   {
+    rudder(0.45*BearingDiff);
+    gps.f_get_position(&lat1, &lon1, 0);////////////////////////////////////////////
+    delay(5000);
+    gps.f_get_position(&lat2, &lon2, 0);////////////////////////////////////////////
+    CurrentHeading = gps.course_to(lat1, lon1, lat2, lon2);
+    latTarget = LatPath[NextCoor];//////////////////////////////////not necessary, latTarget was already set above
+    longTarget = LongPath[NextCoor];//////////////////////////////////not necessary, longTarget was already set above
+    CoorBearing = (int)gps.course_to(lat2, lon2, latTarget, longTarget);
+    BearingDiff = CurrentHeading - CoorBearing;
+   }
+}
+   
+else
+ {
+ rudder(0); //you're doing good boat!!
+ delay (1*60*1000)
+ }
+ 
+logData(lat2, lon2); //record progress on SD card
+
+
+}
