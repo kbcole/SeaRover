@@ -10,7 +10,7 @@ void steer()
  
    
   lat1 = flat;
-  lon2 = flon;
+  lon1 = flon;
   
   
   //if "within range" of the target location, increment NextCoor, and write to EEPROM for failsafe
@@ -19,8 +19,9 @@ void steer()
           EEPROM.write(NCaddress, NextCoor);
         }
   
-  //refresh navigation information
   delay (1*60*1000) //right now it's 1 minute, but could be 3, 5, whatever
+  
+  //refresh navigation information
   gps.f_get_position(&flat, &flon, 0);
    
   lat2 = flat;
@@ -46,34 +47,22 @@ void steer()
   // we leave the rudder in the position for the next autopilot() call
 if (abs(BearingDiff)>20)
 {
- while (  -5 > BearingDiff)
-   {
-    rudder(0.45*BearingDiff);
-    delay(5000);
-    CurrentHeading = gps.course_to(lat1, lon1, lat2, lon2);
-    latTarget = LatPath[NextCoor];
-    longTarget = LongPath[NextCoor];
-    CoorBearing = (int)gps.course_to(lat2, lon2, latTarget, longTarget);
-    BearingDiff = CurrentHeading - CoorBearing;
-   }
 
- while ( 5 < BearingDiff)
+   while(BearingDiff < -5 || BearingDiff > 5)
    {
     rudder(0.45*BearingDiff);
+    gps.f_get_position(&lat1, &lon1, 0);
     delay(5000);
+    gps.f_get_position(&lat2, &lon2, 0);
     CurrentHeading = gps.course_to(lat1, lon1, lat2, lon2);
-    latTarget = LatPath[NextCoor];
-    longTarget = LongPath[NextCoor];
     CoorBearing = (int)gps.course_to(lat2, lon2, latTarget, longTarget);
     BearingDiff = CurrentHeading - CoorBearing;
-   }
+    }
 }
    
-else
- {
- rudder(0); //you're doing good boat!!
- }
  
+rudder(0); //you're doing good boat!!
+
 logData(lat2, lon2); //record progress on SD card
 
 
