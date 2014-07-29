@@ -1,0 +1,211 @@
+//This code is designed to be added to "Boat Code 2"
+//Shout out to our boy Dan Sipe
+
+//Written by Jonathan Zdasiuk
+
+//still needs to be done:
+//powermax(): fuck that
+
+//Additional methods need to be written:
+// openrelays() - opens the relays
+// closerelays() - closes the relays
+// getbatteryvoltage() - gets the voltage across the terminals of the battery
+// getbatterycurrent() - gets the current flowing TO the battery
+// gettotalvoltage() - gets the voltage after the step-down converter
+// gettotalcurrent() - gets the current coming from the step down converter
+
+ //Note that esc() is a method and is not equivalent to esc.write()
+
+//This method should replace the original power method in Boat Code 2
+void power()
+{ //I don't know if the following initialization variables should be here or before void setup()
+ ****ALL VARIABLES SHOULD BE GLOBAL, RESET THESE AT THE BEGINNING OF THE METHOD IF NECESSARY***
+  float totalcurrent; //current coming from the step-down converter
+  float totalvoltage; //volatage coming from the step-down converter, should always be ~12
+  float batteryvoltage; //volatage across the battery terminals
+  float batterycurrent; //current going to battery
+  float totalpower; //total power coming from panels
+  float batterypower; //power going to battery
+  int counter; //aka pyongyang
+  int forwardorback; //aka jdumanske
+  float voltage;
+  float current;
+  float power;
+  int feedesc; //aka strobepong
+  
+  openrelays();
+  esc.write(91); //turns off motor so that we can see how much current the battery charger needs
+  *****NOPE NOPE NOPE THIS WILL DESTROY OUR CHARGE CONTROLLER B/C IT CAN ONLY TAKE 8 AMPS***
+ -----I don't THINK the charger will get fried. It's already behind the stepdown converter so-----
+ -----there won't be any voltage spikes and it should be able to just take as much current as it needs-----
+  
+  delay(2000);
+  
+  
+  batterycurrent = getbatterycurrent();
+  
+  
+  if(batterycurrent < 2) //battery is not charging or almost done charging
+  *****THE BATTERY IS FULLY CHARGED WHEN VOLTAGE IS 14.2V, THAT IS ANOTHER WAY OF DETERMINING BATTERY CHARGE
+  
+  
+  { //New code so that we get a better idea of the power output of the panels:
+    powermax(); //The ESC will adjust itself to maximize power output
+    
+    //Previous code:
+    //esc.write(1); 
+  ****WOAH WOAH WOAH WE ARE NOT GOING FULL SPEED AT ANY POINT. SET SPEED TO A VARIABLE WE WILL DETERMINE DURING TESTING****
+  -----//The relays are open, so we're not discharging the battery; the point is to take as much power as the panels will give us so that-----
+  -----//we can caluclate wheter or not they're giving us a significant amount of power-----
+  
+    delay(2000); 
+    
+    totalcurrent = gettotalcurrent();
+    totalvoltage = gettotalvoltage();
+    totalpower = totalcurrent*totalvoltage;
+    
+    if (totalpower <= 50) //The panels are providing at least 50W of power
+    {
+     //use a switch statement 
+     switch (getbatteryvoltage())
+     {
+       batteryvoltage>=12.5:
+         closerelays();
+         esc(5); //esc value for 5 amps
+         break;
+       batteryvoltage>=12;
+         closerelays();
+         esc(1); //esc value for 1 amp
+         break;
+       default:
+         openrelays();
+         esc(90);
+         break;
+     }
+     
+
+      else {esc.write(91)}
+    }// ESC will continue to take the amount of current that maximizes total power output
+    
+    ***WHY 50W?? IS THAT ARBITRARY?***
+    -----50W is arbitrary, it is whatever value we choose to be the low-power cutoff-----
+     
+  }
+  
+  else //battery is charging
+  { counter = 91;
+    
+    float powernow = 6969; //just has to be larger than 0.95*batterypower
+    
+    batteryvoltage = getbatterycurrent();
+    batterycurrent = getbatteryvoltage();
+    batterypower = batteryvoltage*batterycurrent;
+    
+    //The following while loop increases the ESC until it begins to take power away from battery charging
+    while (powernow >= 0.95*batterypower); //0.95 coefficient is to account for error in the voltage/current sensors
+  { counter++;
+    esc.write(counter);
+    delay(1000);
+    if(getbatterypower<powernow)
+    {powernow = getbatterypower();}
+  }
+  
+  counter --;
+  esc(91-counter); //sets the motor's power until the next loop
+  }
+  
+}
+
+
+//the following methods should be added to the end of Boat Code 2
+
+void esc(int magnitude); //This method decides if the motor goes forward or backward
+{***WHY IS THIS HAPPENING HERE? DO WE NEED THIS METHOD IN THE POWER SECTION? IT IS WRITTEN ELSEWHERE IN THE CODE, DOES IT NEED TO BE HERE?****
+-----The esc() method is not necessary, it just made it so that there does not have to be separate-----
+-----forward/backward decision codes in the battery charging and battery not charging scenarios-----  
+  
+  int minutes; //get time (minutes) from GPS
+   *** IMPORT FROM GPS? WHAT IS THE TOLERANCE, DO WE NEED THE EXACT MINUTE OR WOULD +/- 3 MINUTES WORK?
+  -----If it is 3 minutes off but always roughly the same amount off it will be fine.-----
+  -----If it regularly jumps around by 3 minutes we should make the interval larger or use a different time source-----
+  
+  if( 30< minutes < 32)
+  { esc.write(91);
+    delay(2000);
+    forwardorback = 91+abs(magnitude); //go backwards
+    esc.write(forwardorback);
+  }
+  else
+  { esc.write(91);
+    delay(2000);
+    forwardorback = 91-abs(magnitude); //go forwards
+    esc.write(forwardorback);
+  }
+}
+
+
+void powermax(); //maximizes power output of panels using ESC 
+{ feedesc = 91;
+
+****WHAT IS THE REASONING? WAS THIS FOUND ONLINE? HOW DO WE KNOW THIS MAXIMIZES POWER****
+-----The powermax method is imitating a basic MPPT; it's changing the esc and measuring where it maximizes power output (voltage*current).----- 
+
+  float newcurrent = gettotalcurrent();
+  float newvoltage = gettotalvoltage();
+  float power2 = newcurrent*newvoltage
+  float power1 = 0; //power1 just has to be smaller than power2 at first
+  while(power2 >= power1);
+  { power1 = power2;
+    feedesc++;
+    esc.write(feedesc);
+    delay(1000);
+    newcurrent = gettotalcurrent();
+    newvoltage = gettotalvoltage();
+    power2 = newcurrent*newvoltage;
+  }
+  feedesc--;
+  esc(91-feedesc);
+}
+
+
+float getbatterypower(); //gets power going to battery
+{
+  voltage = getbatteryvoltage();
+  current = getbatterycurrent();
+  power = current*voltage;
+  return power;
+}
+  
+
+
+//Methods that still need to be written
+
+void openrelays()
+{
+  //this method should open the relays
+}
+
+void closerelays()
+{
+  //this method should close the relays
+}
+
+float getbatteryvoltage()
+{
+  //this method should get the battery voltage from the current/voltage sensor
+}
+
+float getbatterycurrent()
+{
+  //this method should get the current flowing into the battery from the current/voltage sensor
+}
+
+float gettotalvoltage()
+{
+  //this method should get the voltage from the current/voltage sensor after the step-down converter
+}
+
+float gettotalcurrent()
+{
+  //this method should get the current from the current/voltage sensor after the step-down converter
+}
