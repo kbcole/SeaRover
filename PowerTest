@@ -1,0 +1,21 @@
+//This code will determine the current draw at various power settings
+
+#include <TinyGPS.h>
+#include <EEPROM.h>
+
+TinyGPS GPS;
+
+int address = 0;
+int ESCSetting = 0;
+int equilibriumDelay = 3000;
+
+
+void setup {
+  
+
+}
+
+void loop {
+  
+  
+}
