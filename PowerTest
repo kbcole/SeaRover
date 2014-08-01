@@ -41,8 +41,6 @@ void loop {
   esc.write(ESCSetting);
   delay(accelerationTime);
   
-  gps.f_get_position(&lat1, &lon1, 0);
-  
   delay(moveTime);
   
   vraw = analogRead(A0);
@@ -51,7 +49,6 @@ void loop {
   vfinal = vraw/49.44;
   ifinal = iraw/14.9;
   
-  gps.f_get_position(&lat2, &lon2, 0);
   speed = gps.f_speed_mph();
   esc.write(100);
   delay(delayTime);
@@ -65,4 +62,5 @@ void loop {
   EEPROM.write(address, speed);  //speed
   address++;
   
+  ESCSetting = ESCSetting + 5;
 }
