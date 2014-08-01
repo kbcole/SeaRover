@@ -2,20 +2,67 @@
 
 #include <TinyGPS.h>
 #include <EEPROM.h>
+#include <PWMServo.h>
+#include <SoftwareSerial.h>
 
-TinyGPS GPS;
+TinyGPS gps;
+SoftwareSerial ss(10, 7); //GPS object with pin 10 recieve into board, pin 7 output from board
+PWMServo esc;
 
-int address = 0;
-int ESCSetting = 0;
-int equilibriumDelay = 3000;
+int address = 1;
+int ESCSetting = 95;
+int accelerationTime = 5000;
+int moveTime = 20000;
+int delayTime = 40000;
+int ampControlPin = 12;
 
+int vraw;
+int iraw;
+float vfinal;
+float ifinal;
+float lat1, lon1, lat2, lon2;
+
+float speed;
 
 void setup {
+  ss.begin(9600);
+  esc.attach(ampControlPin);
   
-
+  esc.write(0); 
+  delay(100);
+  esc.write(179);
+  delay(100);
+  esc.write(90);
+  
+  delay(1500);
 }
 
 void loop {
+  esc.write(ESCSetting);
+  delay(accelerationTime);
   
+  gps.f_get_position(&lat1, &lon1, 0);
+  
+  delay(moveTime);
+  
+  vraw = analogRead(A0);
+  iraw = analogRead(A1);
+  
+  vfinal = vraw/49.44;
+  ifinal = iraw/14.9;
+  
+  gps.f_get_position(&lat2, &lon2, 0);
+  speed = gps.f_speed_mph();
+  esc.write(100);
+  delay(delayTime);
+  
+  EEPROM.write(address, ESCSetting);  //ESC setting
+  address++;
+  EEPROM.write(address, vfinal);  //voltage
+  address++;
+  EEPROM.write(address, ifinal);  //current
+  address++;
+  EEPROM.write(address, speed);  //speed
+  address++;
   
 }
