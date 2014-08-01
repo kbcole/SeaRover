@@ -34,7 +34,7 @@ void setup {
   delay(100);
   esc.write(90);
   
-  delay(1500);
+  delay(60000);  //1 minute delay to wait for GPS lock
 }
 
 void loop {
