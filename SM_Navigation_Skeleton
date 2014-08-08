@@ -146,6 +146,10 @@ State Nav3(){
    
    Serial.println("Rudder Turned to Desired Bearing");
    //insert rudder turning code here
+   Serial.println("Desired Heading:");
+   Serial.println(desiredHeading);
+   rudder.write(desiredHeading);                  // sets the servo position according to the bearing
+   delay(15);                           // waits for the servo to get there 
    
     if (!checkGPS())
      Nav.Set(Nav1);
