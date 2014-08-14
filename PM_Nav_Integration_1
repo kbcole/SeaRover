@@ -15,7 +15,7 @@
 #include <EEPROM.h> //This is the EEPROM library for storing the last location
 
 SM Nav(NavHEAD);//create statemachine with first state "NavHEAD"
-SM PT(PT_HEAD);//create statemachine with first state "NavHEAD"
+SM PT(PT_HEAD);//create statemachine with first state "PT_HEAD"
 
 
 TinyGPS gps; //create gps object
