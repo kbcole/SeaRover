@@ -1,0 +1,498 @@
+//PM_Nav_Integration_1
+//July 31 2014
+//Represents State Machines for the Sea Rover's Navigation Software
+//Power Train State Machines yet to be integrated
+//Run on an Arduino Mega
+ 
+
+
+
+
+#include <SM.h> //This is the State Machine Library
+#include <SoftwareSerial.h> //This is the Serial Library
+#include <TinyGPS.h> //this is the GPS library
+#include <PWMServo.h>  //this is the UPDATED servo library for use on the Mega
+#include <EEPROM.h> //This is the EEPROM library for storing the last location
+
+SM Nav(NavHEAD);//create statemachine with first state "NavHEAD"
+SM PT(PT_HEAD);//create statemachine with first state "NavHEAD"
+
+
+TinyGPS gps; //create gps object
+SoftwareSerial ss(10, 7); //GPS object with pin 10 recieve into board, pin 7 output from board
+
+//reference booleans
+boolean batteryLow = 0; //will disable rudder usage
+boolean batteryCharging = 0;
+boolean batteryFull = 0;
+
+//globals
+float feedMotorCurrent = 0; //how much current to give ESC
+float batteryVoltage = 0; //voltage across battery terminals (~12)
+float solarVoltage = 0; //voltage coming from panels (~18)
+float solarCurrent = 0; //current from panels
+float batteryCurrent = 0; //current going from battey charger to battery (NOT from bat -> esc)
+int lastMPPT = 0; //last time MPPT was used, time to 30 minute intervals
+
+int led = 13; //Relay pin that controls LED
+int motorTime = 0; //timer for motor
+int ampControlPin = 12; //ESC control pin (treated as servo)
+int rudderPin = 11; //rudder control pin
+
+
+//HEADING IS FUCKED UP, IT STARTS AT 0 DEGREES (pointing right) and goes CW!! ADJUST ACCORDINGLY
+
+int NCaddress = 69; //"Next Coordinate Address" -> EEPROM address of last known position
+ float prevLat, prevLon = 501; //501 is arbitrary
+ float newLat, newLon = 501; //501 is arbitrary
+ float Flat, Flon = 501; //501 is arbitrary
+ float currentHeading, desiredHeading = 0; //headings for navigation
+unsigned long age, date, time, chars, PrevSentences = 0; //for GPS statistics
+  unsigned short sentences, sent = 0, failed = 0; //for GPS statistics
+  
+  //LatPath and LongPath must have no more than 255 way points)
+  //these are currently Random coordinates
+float  LatPath[12]  = { 45.478351, 7.811578, 45.478351, 7.811578, 45.478351, 7.811578, 45.478351, 7.811578, 45.478351, 7.811578, 45.478351, 7.811578};  //array of target Latitudes, ENTERED BEFORE TRIP
+float  LonPath[12] = { 45.478351, 7.811578, 45.478351, 7.811578, 45.478351, 7.811578, 45.478351, 7.811578, 45.478351, 7.811578, 45.478351, 7.811578}; //array of target Longitudes, ENTERED BEFORE TRIP
+
+float LatTarget = 0.00000; //set these as startup targets
+float LonTarget = 0.00000; //set these as startup targets
+float TargetRange = 10; //Range of "within target" for startup targets in meters
+
+float WaypointRange = 1000; //Range of "within waypoint" in meters
+int NextCoor = 0; //place in the arrays, tells target coordinate, recorded both in EEPROM and RAM
+//REMEMBER TO RESET EEPROM TO ZERO BEFORE FINAL VOYAGE, THIS IS EXTREMELY IMPORTANT******************
+
+
+
+  
+ PWMServo rudder; //create PWMServo object for the rudder
+ PWMServo esc; //create PWMServo object for the current controller (treated as servo)
+
+
+void setup(){
+  Serial.begin(9600); //output on computer
+  ss.begin(9600);  //gps 
+  pinMode(led,OUTPUT); //relay assignment
+  esc.attach(ampControlPin); //esc assignment
+  rudder.attach(rudderPin); //rudder assignment
+  NextCoor = EEPROM.read(NCaddress); //find out where the boat was last --->> RESET BEFORE LAUNCH
+  
+  Serial.println("ESC Calibrating.....");
+  
+  //ESC calibration sequence
+   esc.write(0); 
+  delay(100);
+  esc.write(179);
+  delay(100);
+  esc.write(90);
+  
+  delay(1500); //delay to let ESC software setup 
+ }
+ 
+ void(* resetFunc) (void) = 0; //this is the "reset" function to avoid millis() overflow. may not be utilized.
+
+
+void loop(){
+  EXEC(Nav);//run statemachine "Nav".
+}
+
+//NavHEAD is just to demonstrate that all systems work, nothing critical is accomplished here
+  State NavHEAD(){
+  Serial.println("running HEAD function");
+  Blink();
+  Serial.println("blink LEDS, run startup scripts, etc.");
+   RudderWiggle(); 
+  Serial.println("Transitioning into STATE 1");
+  delay(500);
+  Nav.Set(Nav1);
+  
+}
+
+//Nav1 is the holding state until the GPS locks
+State Nav1(){
+  Serial.println("STATE 1 running");
+  Blink();
+  Blink();
+  Serial.println("waiting for GPS lock");
+  Blink();
+
+    if (checkGPS()) //if there's new data (new sentences), then move to Nav2
+     Nav.Set(Nav_TargetSwitch);   
+     //repeats if there's no good GPS data
+}
+
+//this state delays until the boat is BROUGHT to within the radius of a target
+//used as a sleeper state when launching the boat 
+State Nav_TargetSwitch(){
+  checkGPS(); //update newLat and newLon
+  float distance = TinyGPS::distance_between (newLat, newLon, LatTarget, LonTarget);
+  if (distance > WaypointRange)
+  {delay(1000);
+   TripleBlink();} //wait and blink LED
+  else
+  {Nav.Set(Nav2); //if WITHIN range, move on to Nav2
+   PT.Set(PT1); //if WITHIN range, begin motor
+  }
+}
+  
+
+
+//Nav2 is entered when GPS data is good.
+State Nav2(){
+  Serial.println("GPS locked, STATE TWO entered");
+
+  DoubleBlink();
+  prevLat = Flat; //this records current position
+  prevLon = Flon; //this records current position
+  
+  
+  //THIS COULD ALL GET SKIPPED IF WE PRE-ESTABLISH A STARTING BEARING
+  
+  //motor will run for five minutes (arbitrary) to find establish bearing
+  
+   delay(1000);
+   Serial.println("...");
+   delay(1000);
+   
+   //if GPS data is bad, return to Nav1
+   //this if statement should be used at the end of critical states
+  if (!checkGPS())
+    { Nav.Set(Nav1);}
+    
+     Serial.println("Transitioning into STATE THREE");
+
+  Nav.Set(Nav3); //transition once Nav2 finished
+}
+
+//Nav3 determines the current bearing based off previously recorded position
+//Nav3 also goes for two minutes (arb) with rudder turned
+State Nav3(){  
+  Serial.println("STATE THREE entered");
+
+  checkGPS(); //update newLat, newLon
+  currentHeading = TinyGPS::course_to (prevLat, prevLon, newLat, newLon); //find the current bearing
+  
+ 
+   DoubleBlink();
+   
+   //find desired heading
+   desiredHeading = TinyGPS::course_to (newLat, newLon, LatPath[NextCoor], LonPath[NextCoor]);
+ 
+   prevLat = newLat; //update positions for next time
+   prevLon = newLon; //update positions for next time
+   
+   Serial.println("Rudder Turned to Desired Bearing");
+   //insert rudder turning code here
+   
+    if (!checkGPS())
+     Nav.Set(Nav1);
+     
+   
+    delay(1000);
+   DoubleBlink();
+   Serial.println("...");
+   delay(1000);
+   Serial.println("...");
+   delay(1000);
+   
+   motorTime = millis(); //record time when motor starts
+    esc.write(50); //turn motor on (arbitrary number)
+   Serial.println("Motor Turned on for Two minutes"); //two minutes is not accurate
+   
+   delay(1000);
+   DoubleBlink();
+   Serial.println("...");
+   delay(1000);
+   Serial.println("...");
+   delay(1000);
+   DoubleBlink();
+   
+     if (!checkGPS())
+     Nav.Set(Nav1);
+     
+   Serial.println("Transitioning into STATE 4");
+   Nav.Set(Nav4); //go to Nav4
+}
+
+
+//Nav4 keeps motor running but straightens rudder
+State Nav4(){
+  
+  DoubleBlink();
+  delay(500);
+  Serial.println("STATE 4 entered");
+  delay(1000);
+  DoubleBlink();
+  
+while((millis() - motorTime) < 10000) //delay until motor has been on for 10 seconds
+   {delay(500); }
+  Serial.println("Rudder Straightened Out");
+  //straighten rudder
+  
+   if (!checkGPS())
+     Nav.Set(Nav1);
+     
+   delay(1000);
+   DoubleBlink();
+   Serial.println("...");
+   delay(1000);
+   Serial.println("...");
+   delay(1000);
+   
+   Serial.println("Motor Turned On for Three Minutes"); //arbitrary
+   
+  delay(1000);
+   DoubleBlink();
+   Serial.println("...");
+   delay(1000);
+   Serial.println("...");
+   DoubleBlink();
+   delay(1000);
+   
+   while((millis() - motorTime) < 20000) //delay until motor has been on for 20 seconds
+   {delay(500); }
+   esc.write(90); //turn motor off
+   
+   Serial.println("motor was on for 20 seconds");
+  
+   Serial.println("Transitioning into STATE FIVE");
+   if (!checkGPS())
+     Nav.Set(Nav1);
+     
+     
+     
+     Nav.Set(Nav5);
+}
+
+//Nav5 checks if the next waypoint has been reached
+
+State Nav5(){
+  Serial.println("STATE FIVE ENTERED");
+  DoubleBlink();
+  float distance = TinyGPS::distance_between (newLat, newLon, LatPath[NextCoor], LonPath[NextCoor]);
+  if (distance < WaypointRange)
+     {NextCoor++;
+     EEPROM.write(NCaddress, NextCoor);}
+     else
+     Serial.println("Waypoint NOT reached");
+     
+     delay(1000);
+     Serial.println("Returning to STATE 3");
+     delay(500);
+     DoubleBlink();
+     
+    Nav.Set(Nav3);
+}
+
+
+
+
+//POWER TRAIN STATES
+State PT_HEAD(){
+  Serial.println("running PT_HEAD function");
+  TripleBlink();
+  Serial.println("blink LEDS, run startup scripts, etc.");
+  
+  //update all values
+   readBatteryVoltage();
+   readSolarCurrent();
+   readSolarVoltage();
+
+  Serial.println("Transitioning into STATE 1");
+  delay(500);
+ PT.Set(PT1);
+  
+}
+
+
+
+//PT1 determines state of charging and battery level
+//PT1 acts as an controller for the various states that can exist.
+//PT1 should be revisited every 15 minutes or so to determine correct state
+State PT1(){
+ 
+  //determine state of battery
+ if (batteryVoltage < 12.4) //arbitrary
+  {batteryLow = 1;
+   batteryFull = 0;}
+  else
+  {batteryLow = 0;}
+  
+  if(batteryVoltage > 14.4)
+   {batteryFull = 1;}
+  
+  //determine if battery charging
+  if (batteryCurrent > 2)
+  {batteryCharging = 1;
+   OpenRelays();} //have all power to motors come from solar panels
+  else
+  {batteryCharging = 0;}
+  
+  //highest priority Stage
+  if(batteryLow)
+  {PT.Set(BatLow);}
+  
+  //most common stage
+  if(batteryCharging)
+  {PT.Set(MPPT_Charging);}
+  
+  //opens relays, minimizes usage
+  if(readSolarCurrent() < 0.5) //0.5 is arbitrary
+  {PT.Set(NightMode);}
+  
+  //lowest priority, sends all solar current to motor
+  readSolarCurrent();//update solarCurrent
+  if(batteryFull && (solarCurrent > 0.5)  )
+  {PT.Set(MPPT_Charging);}
+  
+}
+
+
+State BatLow() 
+{
+  //set throttle to zero
+  //open relays to stop any battery drainage
+  //delay until solar panels have current
+  
+  OpenRelays();
+  
+  
+     readBatteryVoltage();
+  if (batteryVoltage < 12.4) //arbitrary
+    {batteryLow = 1;}
+     
+     delay(2000);
+  if (batteryVoltage > 12.4)
+    {batteryLow = 0;
+      PT.Set(PT_HEAD);}  
+  
+}
+
+State MPPT_Charging() {
+  //optimize motor draw when battery is charging
+  //use counter so that this is called every 30 minutes or so
+  //takes into account effect on charge controller
+  
+  //add in JZ's optimization algorithms 
+}
+
+State MPPT_Full() {
+  //optimize motor draw when battery is full
+  //do not care about battery charging
+  
+    //add in JZ's optimization algorithms 
+}
+
+State NightMode(){
+  //turns on NavLight (could use GPS timestamps as well)
+  //Closes relay so that boat uses battery power
+  
+  CloseRelays();
+  
+}
+  
+
+  float readBatteryVoltage()
+  { int rawBatV = analogRead(1);
+    //read battery voltage data, return float of bat voltage and update batteryVoltage
+  }
+  
+  float readBatteryCurrent()
+  { int rawBatC = analogRead(2);
+    //read battery current data, return float of bat current and update batteryCurrent
+  }
+  
+  float readSolarCurrent()
+  { int rawSolC = analogRead(3);
+    //read current data, return float of solar current and update solarCurrent
+  }
+  
+  float readSolarVoltage()
+  { int rawSolV = analogRead(4);
+    //read solar voltage, return float of solar voltage and update solarVoltage
+  }
+  
+  
+  //will likely be controlled completely by the Power Train state machines
+ 
+  
+  //opens relays (so charge can't come from batteries to motor
+  void OpenRelays(){}
+  
+  //close relays so that battery doesn't fry and to allow motor to run off battery
+  void CloseRelays(){}
+  
+
+
+
+
+
+boolean checkGPS(){
+  unsigned long start = millis();
+
+  do 
+  {
+    while (ss.available())
+      gps.encode(ss.read());
+  } while (millis() - start < 1000);
+  
+    gps.f_get_position(&Flat, &Flon, 0);
+    gps.stats(&chars, &sentences, &failed);
+    newLat = Flat; //update newLat
+    newLon = Flon; //update newLon
+  
+    
+    if(sentences > PrevSentences) //if new data has come from GPS (i.e. more sentences have been recieved)
+     { PrevSentences = sentences;
+       return true;}
+       else
+       return false;   
+}
+  
+  //this is self-explanatory
+  void RudderWiggle() 
+  { rudder.write(10);
+   delay(400);
+   rudder.write(170);
+   delay(400);
+   rudder.write(90);
+   delay(400);
+  }
+  
+  //single blink, spaced apart
+  //represents "searching for GPS"
+  void Blink()
+  { digitalWrite(led,HIGH);
+    delay(500);
+    digitalWrite(led,LOW);
+    delay(500);
+  }
+  
+  //quick double blink
+  //represents "GPS is locked"
+  void DoubleBlink()
+  { digitalWrite(led,HIGH);
+    delay(100);
+    digitalWrite(led,LOW);
+    delay(100);
+    digitalWrite(led,HIGH);
+    delay(100);
+    digitalWrite(led,LOW);
+    delay(100);
+  }
+  
+   void TripleBlink()
+  {digitalWrite(led,HIGH);
+    delay(100);
+    digitalWrite(led,LOW);
+    delay(100);
+    digitalWrite(led,HIGH);
+    delay(100);
+    digitalWrite(led,LOW);
+    delay(100);
+    digitalWrite(led,HIGH);
+    delay(100);
+    digitalWrite(led,LOW);
+    delay(100);
+  }
